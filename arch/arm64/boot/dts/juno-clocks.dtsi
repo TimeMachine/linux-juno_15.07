@@ -1,0 +1,75 @@
+/*
+ * ARM Juno Platform clocks
+ *
+ * Copyright (c) 2013-2014 ARM Ltd
+ *
+ * This file is licensed under a dual GPLv2 or BSD license.
+ *
+ */
+
+	/* SoC fixed clocks */
+	soc_uartclk: refclk72738khz {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <7273800>;
+		clock-output-names = "juno:uartclk";
+	};
+
+	soc_usb48mhz: clk48mhz {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <48000000>;
+		clock-output-names = "clk48mhz";
+	};
+
+	soc_smc50mhz: clk50mhz {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <50000000>;
+		clock-output-names = "smc_clk";
+	};
+
+	soc_refclk100mhz: refclk100mhz {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <100000000>;
+		clock-output-names = "apb_pclk";
+	};
+
+	soc_faxiclk: refclk533mhz {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <533000000>;
+		clock-output-names = "faxi_clk";
+	};
+
+	scpi {
+		compatible = "arm,scpi";
+		mboxes = <&mailbox 1>;
+		shmem = <&cpu_scp_hpri>;
+
+		clocks {
+			compatible = "arm,scpi-clocks";
+
+			scpi_dvfs: scpi_clocks@0 {
+				compatible = "arm,scpi-dvfs";
+				#clock-cells = <1>;
+				clock-indices = <0>, <1>, <2>;
+				clock-output-names = "vbig", "vlittle", "vgpu";
+			};
+
+			pixel_clk: scpi_clocks@3 {
+				compatible = "arm,scpi-clk";
+				#clock-cells = <1>;
+				clock-indices = <3>, <4>;
+				clock-output-names = "pxlclk0", "pxlclk1";
+			};
+
+			audio_clk: scpi_clocks@5 {
+				compatible = "arm,scpi-clk";
+				#clock-cells = <1>;
+				clock-indices = <5>;
+				clock-output-names = "i2s_clock";
+			};
+		};
+	};
