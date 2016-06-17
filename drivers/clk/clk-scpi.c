@@ -64,6 +64,7 @@ static int scpi_clk_set_rate(struct clk_hw *hw, unsigned long rate,
 			     unsigned long parent_rate)
 {
 	struct scpi_clk *clk = to_scpi_clk(hw);
+	printk("scpi_clk_set_rate\n");
 
 	return scpi_ops->clk_set_val(clk->id, rate);
 }
@@ -134,6 +135,7 @@ static int scpi_dvfs_set_rate(struct clk_hw *hw, unsigned long rate,
 {
 	struct scpi_clk *clk = to_scpi_clk(hw);
 	int ret = __scpi_find_dvfs_index(clk, rate);
+	printk("scpi_dvfs_set_rate\n");
 
 	if (ret < 0)
 		return ret;

@@ -703,8 +703,11 @@ __SYSCALL(__NR_renameat2, sys_renameat2)
 #define __NR_seccomp 277
 __SYSCALL(__NR_seccomp, sys_seccomp)
 
+#define __NR_sched_energy_set_alpha 278
+__SYSCALL(__NR_sched_energy_set_alpha, sys_sched_energy_set_alpha)
+
 #undef __NR_syscalls
-#define __NR_syscalls 278
+#define __NR_syscalls 279
 
 /*
  * All syscalls below here should go away really,

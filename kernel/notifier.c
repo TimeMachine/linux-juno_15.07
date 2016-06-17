@@ -490,9 +490,9 @@ int __srcu_notifier_call_chain(struct srcu_notifier_head *nh,
 	int ret;
 	int idx;
 
-	idx = srcu_read_lock(&nh->srcu);
+	//idx = srcu_read_lock(&nh->srcu);
 	ret = notifier_call_chain(&nh->head, val, v, nr_to_call, nr_calls);
-	srcu_read_unlock(&nh->srcu, idx);
+	//srcu_read_unlock(&nh->srcu, idx);
 	return ret;
 }
 EXPORT_SYMBOL_GPL(__srcu_notifier_call_chain);

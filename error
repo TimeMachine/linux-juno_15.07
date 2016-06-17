@@ -1,0 +1,4 @@
+kernel/sched/energy.c: In function ‘algo’:
+kernel/sched/energy.c:813:2: warning: ISO C90 forbids mixed declarations and code [-Wdeclaration-after-statement]
+  static int data = 0; 
+  ^
