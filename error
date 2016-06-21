@@ -1,4 +1,3 @@
-kernel/sched/energy.c: In function ‘algo’:
-kernel/sched/energy.c:813:2: warning: ISO C90 forbids mixed declarations and code [-Wdeclaration-after-statement]
-  static int data = 0; 
-  ^
+kernel/sched/energy.c:34:23: warning: ‘set_freq_timer’ defined but not used [-Wunused-variable]
+ static struct hrtimer set_freq_timer;
+                       ^

@@ -3008,7 +3008,7 @@ static void __sched __schedule(void)
 	unsigned long *switch_count;
 	struct rq *rq;
 	int cpu;
-
+	
 need_resched:
 	preempt_disable();
 	cpu = smp_processor_id();

@@ -1146,7 +1146,6 @@ static struct clk *clk_propagate_rate_change(struct clk *clk, unsigned long even
 		if (ret & NOTIFY_STOP_MASK)
 			fail_clk = clk;
 	}
-	printk("__clk_notify succes\n");
 
 	hlist_for_each_entry(child, &clk->children, child_node) {
 		clk = clk_propagate_rate_change(child, event);
@@ -1168,21 +1167,18 @@ static void clk_change_rate(struct clk *clk)
 	unsigned long best_parent_rate = 0;
 
 	old_rate = clk->rate;
-	printk("%s\n",clk->name);
 
 	if (clk->parent)
 		best_parent_rate = clk->parent->rate;
 
 	if (clk->ops->set_rate)
 		clk->ops->set_rate(clk->hw, clk->new_rate, best_parent_rate);
-	printk("clk->ops->set_rate\n");
 
 	if (clk->ops->recalc_rate)
 		clk->rate = clk->ops->recalc_rate(clk->hw, best_parent_rate);
 	else
 		clk->rate = best_parent_rate;
 
-	printk("POST_RATE_CHANGE\n");
 	if (clk->notifier_count && old_rate != clk->rate)
 		__clk_notify(clk, POST_RATE_CHANGE, old_rate, clk->rate);
 
@@ -1217,7 +1213,7 @@ int clk_set_rate(struct clk *clk, unsigned long rate)
 	int ret = 0;
 
 	/* prevent racing with updates to the clock topology */
-	//clk_prepare_lock();
+	clk_prepare_lock();
 	prepare_owner = current;
 	prepare_refcnt = 1;
 
@@ -1230,7 +1226,6 @@ int clk_set_rate(struct clk *clk, unsigned long rate)
 		goto out;
 	}
 
-	printk("clk_calc_new_rates\n");
 	/* calculate new rates and get the topmost changed clock */
 	top = clk_calc_new_rates(clk, rate);
 	if (!top) {
@@ -1238,7 +1233,6 @@ int clk_set_rate(struct clk *clk, unsigned long rate)
 		goto out;
 	}
 
-	printk("clk_propagate_rate_change\n");
 	/* notify that we are about to change rates */
 	fail_clk = clk_propagate_rate_change(top, PRE_RATE_CHANGE);
 	if (fail_clk) {
@@ -1249,12 +1243,11 @@ int clk_set_rate(struct clk *clk, unsigned long rate)
 		goto out;
 	}
 
-	printk("clk_change_rate\n");
 	/* change the rates */
 	clk_change_rate(top);
 
 out:
-	//clk_prepare_unlock();
+	clk_prepare_unlock();
 	if (--prepare_refcnt == 0)
 		prepare_owner = NULL;
 

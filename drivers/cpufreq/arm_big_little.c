@@ -108,8 +108,7 @@ bL_cpufreq_set_rate(u32 cpu, u32 old_cluster, u32 new_cluster, u32 rate)
 	int ret;
 	bool bLs = is_bL_switching_enabled();
 
-	//mutex_lock(&cluster_lock[new_cluster]);
-	printk("[freq] bL_cpufreq_set_rate\n");
+	mutex_lock(&cluster_lock[new_cluster]);
 
 	if (bLs) {
 		prev_rate = per_cpu(cpu_last_req_freq, cpu);
@@ -122,49 +121,48 @@ bL_cpufreq_set_rate(u32 cpu, u32 old_cluster, u32 new_cluster, u32 rate)
 		new_rate = rate;
 	}
 
-	printk("%s: cpu: %d, old cluster: %d, new cluster: %d, freq: %d\n",
+	pr_debug("%s: cpu: %d, old cluster: %d, new cluster: %d, freq: %d\n",
 			__func__, cpu, old_cluster, new_cluster, new_rate);
 
 	ret = clk_set_rate(clk[new_cluster], new_rate * 1000);
-	printk("[freq] clk_set_rate below\n");
 	if (WARN_ON(ret)) {
-		pr_err("clk_set_rate failed: %d, new cluster: %d\n", ret,
+		printk("clk_set_rate failed: %d, new cluster: %d\n", ret,
 				new_cluster);
 		if (bLs) {
 			per_cpu(cpu_last_req_freq, cpu) = prev_rate;
 			per_cpu(physical_cluster, cpu) = old_cluster;
 		}
 
-		//mutex_unlock(&cluster_lock[new_cluster]);
+		mutex_unlock(&cluster_lock[new_cluster]);
 
 		return ret;
 	}
 
-	//mutex_unlock(&cluster_lock[new_cluster]);
+	mutex_unlock(&cluster_lock[new_cluster]);
 
 	/* Recalc freq for old cluster when switching clusters */
 	if (old_cluster != new_cluster) {
-		printk("%s: cpu: %d, old cluster: %d, new cluster: %d\n",
+		pr_debug("%s: cpu: %d, old cluster: %d, new cluster: %d\n",
 				__func__, cpu, old_cluster, new_cluster);
 
 		/* Switch cluster */
 		bL_switch_request(cpu, new_cluster);
 
-		//mutex_lock(&cluster_lock[old_cluster]);
+		mutex_lock(&cluster_lock[old_cluster]);
 
 		/* Set freq of old cluster if there are cpus left on it */
 		new_rate = find_cluster_maxfreq(old_cluster);
 		new_rate = ACTUAL_FREQ(old_cluster, new_rate);
 
 		if (new_rate) {
-			printk("%s: Updating rate of old cluster: %d, to freq: %d\n",
+			pr_debug("%s: Updating rate of old cluster: %d, to freq: %d\n",
 					__func__, old_cluster, new_rate);
 
 			if (clk_set_rate(clk[old_cluster], new_rate * 1000))
-				pr_err("%s: clk_set_rate failed: %d, old cluster: %d\n",
+				pr_debug("%s: clk_set_rate failed: %d, old cluster: %d\n",
 						__func__, ret, old_cluster);
 		}
-		//mutex_unlock(&cluster_lock[old_cluster]);
+		mutex_unlock(&cluster_lock[old_cluster]);
 	}
 
 	if (bL_cpufreq_get_rate(cpu) != new_rate)

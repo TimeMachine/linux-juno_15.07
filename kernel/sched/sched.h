@@ -393,15 +393,17 @@ extern struct root_domain def_root_domain;
 #endif /* CONFIG_SMP */
 /* energy-credit based scheduler  |runqueues */
 struct energy_rq {
-       unsigned long energy_nr_running;
-       struct rq *rq;
-       struct list_head queue;
-       u64 timeslice_start;
-       u64 time_sharing;
-       unsigned int *freq;
-       int set_freq;
-       int state_number;
-       struct hrtimer hr_timer;
+	unsigned long energy_nr_running;
+	struct rq *rq;
+	struct list_head queue;
+	u64 timeslice_start;
+	u64 time_sharing;
+	unsigned int *freq;
+	int set_freq;
+	unsigned int freq_now;
+	int state_number;
+	struct hrtimer hr_timer;
+	int dvfs_lock;
 };
 
 /*
