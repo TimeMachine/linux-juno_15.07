@@ -849,4 +849,5 @@ asmlinkage long sys_finit_module(int fd, const char __user *uargs, int flags);
 asmlinkage long sys_seccomp(unsigned int op, unsigned int flags,
 			    const char __user *uargs);
 asmlinkage long sys_sched_energy_set_alpha(int alpha);
+asmlinkage long sys_sched_energy_set_workload(unsigned int workload);
 #endif

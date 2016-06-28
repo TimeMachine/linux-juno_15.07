@@ -23,6 +23,8 @@
 #include <linux/slab.h>
 #include <linux/sysfs.h>
 #include <linux/types.h>
+#include <linux/sched.h>
+#include "../../kernel/sched/sched.h"
 
 #include "cpufreq_governor.h"
 
@@ -120,13 +122,37 @@ static void cs_dbs_timer(struct work_struct *work)
 	struct dbs_data *dbs_data = dbs_info->cdbs.cur_policy->governor_data;
 	struct cs_dbs_tuners *cs_tuners = dbs_data->tuners;
 	int delay = delay_for_sampling_rate(cs_tuners->sampling_rate);
-	bool modify_all = true;
-
+	bool modify_all = false;
+	
+	int i, j;
+	struct rq *i_rq;
+	static int index[2][4] = {{0,3,4,5}, {1,2}};
+	struct cpufreq_policy *policy;
+	
 	mutex_lock(&core_dbs_info->cdbs.timer_mutex);
-	if (!need_load_eval(&core_dbs_info->cdbs, cs_tuners->sampling_rate))
-		modify_all = false;
-	else
-		dbs_check_cpu(dbs_data, cpu);
+#define big_cpu 2
+#define little_cpu 4
+	for (i = 0; i < 2; i++) {
+		i_rq = cpu_rq(i);
+		if (i_rq->energy.set_freq == -1)
+			continue;
+		//printk("@ cpu:%d freq:%d\n",i,i_rq->energy.set_freq);
+		policy = cpufreq_cpu_get(i);
+		__cpufreq_driver_target(policy, i_rq->energy.set_freq, CPUFREQ_RELATION_L);
+		//cpufreq_governor_dbs(policy, &cs_dbs_cdata, CPUFREQ_GOV_LIMITS);
+		cpufreq_cpu_put(policy);
+		if(i == 0) {
+			for (j = 0; j < little_cpu; j++)
+				cpu_rq(index[0][j])->energy.freq_now = i_rq->energy.set_freq;
+		}
+		else {
+			cpu_rq(1)->energy.freq_now = i_rq->energy.set_freq;
+			cpu_rq(2)->energy.freq_now = i_rq->energy.set_freq;
+		}
+		i_rq->energy.set_freq = -1;
+	}
+		//printk("[test] cpu:%d set_freq:%d \n",cpu, i_rq->energy.set_freq);
+	//}
 
 	gov_queue_work(dbs_data, dbs_info->cdbs.cur_policy, delay, modify_all);
 	mutex_unlock(&core_dbs_info->cdbs.timer_mutex);
@@ -386,7 +412,7 @@ static int cs_cpufreq_governor_dbs(struct cpufreq_policy *policy,
 static
 #endif
 struct cpufreq_governor cpufreq_gov_conservative = {
-	.name			= "conservative",
+	.name			= "energy",
 	.governor		= cs_cpufreq_governor_dbs,
 	.max_transition_latency	= TRANSITION_LATENCY_LIMIT,
 	.owner			= THIS_MODULE,

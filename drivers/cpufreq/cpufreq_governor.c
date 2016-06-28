@@ -171,7 +171,7 @@ EXPORT_SYMBOL_GPL(need_load_eval);
 static void set_sampling_rate(struct dbs_data *dbs_data,
 		unsigned int sampling_rate)
 {
-	if (dbs_data->cdata->governor == GOV_CONSERVATIVE) {
+	if (dbs_data->cdata->governor == GOV_CONSERVATIVE || dbs_data->cdata->governor == GOV_ENERGY) {
 		struct cs_dbs_tuners *cs_tuners = dbs_data->tuners;
 		cs_tuners->sampling_rate = sampling_rate;
 	} else {
@@ -247,7 +247,7 @@ int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		set_sampling_rate(dbs_data, max(dbs_data->min_sampling_rate,
 					latency * LATENCY_MULTIPLIER));
 
-		if ((cdata->governor == GOV_CONSERVATIVE) &&
+		if (((cdata->governor == GOV_CONSERVATIVE) || (cdata->governor == GOV_ENERGY)) &&
 				(!policy->governor->initialized)) {
 			struct cs_ops *cs_ops = dbs_data->cdata->gov_ops;
 
@@ -264,7 +264,7 @@ int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 			sysfs_remove_group(get_governor_parent_kobj(policy),
 					get_sysfs_attr(dbs_data));
 
-			if ((dbs_data->cdata->governor == GOV_CONSERVATIVE) &&
+			if (((cdata->governor == GOV_CONSERVATIVE) || (cdata->governor == GOV_ENERGY)) &&
 				(policy->governor->initialized == 1)) {
 				struct cs_ops *cs_ops = dbs_data->cdata->gov_ops;
 
@@ -283,7 +283,7 @@ int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 
 	cpu_cdbs = dbs_data->cdata->get_cpu_cdbs(cpu);
 
-	if (dbs_data->cdata->governor == GOV_CONSERVATIVE) {
+	if ((cdata->governor == GOV_CONSERVATIVE) || (cdata->governor == GOV_ENERGY)) {
 		cs_tuners = dbs_data->tuners;
 		cs_dbs_info = dbs_data->cdata->get_cpu_dbs_info_s(cpu);
 		sampling_rate = cs_tuners->sampling_rate;
@@ -325,7 +325,7 @@ int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		 * conservative does not implement micro like ondemand
 		 * governor, thus we are bound to jiffes/HZ
 		 */
-		if (dbs_data->cdata->governor == GOV_CONSERVATIVE) {
+		if ((cdata->governor == GOV_CONSERVATIVE) || (cdata->governor == GOV_ENERGY)) {
 			cs_dbs_info->down_skip = 0;
 			cs_dbs_info->enable = 1;
 			cs_dbs_info->requested_freq = policy->cur;
@@ -345,7 +345,7 @@ int cpufreq_governor_dbs(struct cpufreq_policy *policy,
 		break;
 
 	case CPUFREQ_GOV_STOP:
-		if (dbs_data->cdata->governor == GOV_CONSERVATIVE)
+		if ((cdata->governor == GOV_CONSERVATIVE) || (cdata->governor == GOV_ENERGY))
 			cs_dbs_info->enable = 0;
 
 		gov_cancel_work(dbs_data, policy);

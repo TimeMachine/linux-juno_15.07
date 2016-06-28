@@ -1061,6 +1061,7 @@ struct sched_energy_entity {
        u64 credit[NR_CPUS]; // calculate       
        int split;
        int alpha;
+       u64 workload_guarantee;
        struct task_struct *instance;
        // queue 
        struct energy_rq *rq_e;

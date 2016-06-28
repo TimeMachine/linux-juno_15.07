@@ -706,8 +706,10 @@ __SYSCALL(__NR_seccomp, sys_seccomp)
 #define __NR_sched_energy_set_alpha 278
 __SYSCALL(__NR_sched_energy_set_alpha, sys_sched_energy_set_alpha)
 
+#define __NR_sched_energy_set_workload 279
+__SYSCALL(__NR_sched_energy_set_workload, sys_sched_energy_set_workload)
 #undef __NR_syscalls
-#define __NR_syscalls 279
+#define __NR_syscalls 280
 
 /*
  * All syscalls below here should go away really,

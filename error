@@ -1,3 +1,3 @@
-kernel/sched/energy.c:34:23: warning: ‘set_freq_timer’ defined but not used [-Wunused-variable]
- static struct hrtimer set_freq_timer;
-                       ^
+kernel/sched/energy.c:138:29: warning: ‘sched_resched_timer’ defined but not used [-Wunused-function]
+ static enum hrtimer_restart sched_resched_timer(struct hrtimer *timer)
+                             ^

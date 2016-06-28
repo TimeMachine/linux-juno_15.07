@@ -89,6 +89,7 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/sched.h>
 static int sched_energy_alpha = 1;
+static int sched_energy_workload = 0;
 
 void start_bandwidth_timer(struct hrtimer *period_timer, ktime_t period)
 {
@@ -1609,25 +1610,30 @@ int wake_up_state(struct task_struct *p, unsigned int state)
 
 void __energy_task_init(struct task_struct *p)
 {
-       //init energy task info.
-       int i;
-       INIT_LIST_HEAD(&p->ee.list_item);
-       p->ee.execute_start = 0;
-       p->ee.total_execution = 0;
-       p->ee.instance = p;
-       p->ee.select = 0;
-       p->ee.first = 1;
-       p->ee.need_move = -1;
-       p->ee.split = 0;
-       p->ee.over_predict = 0;
-       for (i = 0; i < NR_CPUS; i++)
-               p->ee.credit[i] = 0;
-       if (sched_energy_alpha != 1) {
-               p->ee.alpha = sched_energy_alpha;
-               sched_energy_alpha = 1;
-       }
-       else
-               p->ee.alpha = 1;
+	//init energy task info.
+	int i;
+	INIT_LIST_HEAD(&p->ee.list_item);
+	p->ee.execute_start = 0;
+	p->ee.total_execution = 0;
+	p->ee.instance = p;
+	p->ee.select = 0;
+	p->ee.first = 1;
+	p->ee.need_move = -1;
+	p->ee.split = 0;
+	p->ee.over_predict = 0;
+	for (i = 0; i < NR_CPUS; i++)
+		p->ee.credit[i] = 0;
+	if (energy_policy(p->policy)) {
+		if (sched_energy_alpha != 1) 
+			p->ee.alpha = sched_energy_alpha;
+		else
+			p->ee.alpha = 1;
+
+		if (sched_energy_workload != 0)
+			p->ee.workload_guarantee = sched_energy_workload;
+		else
+			p->ee.workload = 0;
+	}
 }
 
 
@@ -1742,7 +1748,7 @@ void sched_fork(struct task_struct *p)
 	 * Revert to default priority/policy on fork if requested.
 	 */
 	if (unlikely(p->sched_reset_on_fork)) {
-		if (task_has_rt_policy(p)||energy_policy(p->policy)) {
+		if (task_has_rt_policy(p) || energy_policy(p->policy)) {
 			p->policy = SCHED_NORMAL;
 			p->static_prio = NICE_TO_PRIO(0);
 			p->rt_priority = 0;
@@ -3885,8 +3891,18 @@ __setscheduler(struct rq *rq, struct task_struct *p, int policy, int prio)
 	p->normal_prio = normal_prio(p);
 	/* we are holding p->pi_lock already */
 	p->prio = rt_mutex_getprio(p);
-	if (p->policy == SCHED_ENERGY)
+	if (p->policy == SCHED_ENERGY) {
 	    p->sched_class = &energy_sched_class;
+		if (sched_energy_alpha != 1) 
+			p->ee.alpha = sched_energy_alpha;
+		else
+			p->ee.alpha = 1;
+
+		if (sched_energy_workload != 0)
+			p->ee.workload_guarantee = sched_energy_workload;
+		else
+			p->ee.workload = 0;
+	}
 	else if (rt_prio(p->prio)) {
 		p->sched_class = &rt_sched_class;
 #ifdef CONFIG_SCHED_HMP
@@ -4719,6 +4735,13 @@ SYSCALL_DEFINE1(sched_energy_set_alpha, int, alpha)
        return 0;
 }
 
+SYSCALL_DEFINE1(sched_energy_set_workload,unsigned int, workload)
+{
+	if (workload > 1100000)
+		return -EINVAL;
+	sched_energy_workload = workload;
+	return 0;
+}
 
 static const char stat_nam[] = TASK_STATE_TO_CHAR_STR;
 
