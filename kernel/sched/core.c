@@ -1029,11 +1029,11 @@ void set_task_cpu(struct task_struct *p, unsigned int new_cpu)
 
 	__set_task_cpu(p, new_cpu);
 }
-
+/*
 struct migration_arg {
 	struct task_struct *task;
 	int dest_cpu;
-};
+};*/
 
 static int migration_cpu_stop(void *data);
 
@@ -1623,17 +1623,12 @@ void __energy_task_init(struct task_struct *p)
 	p->ee.over_predict = 0;
 	for (i = 0; i < NR_CPUS; i++)
 		p->ee.credit[i] = 0;
-	if (energy_policy(p->policy)) {
-		if (sched_energy_alpha != 1) 
-			p->ee.alpha = sched_energy_alpha;
-		else
-			p->ee.alpha = 1;
-
-		if (sched_energy_workload != 0)
-			p->ee.workload_guarantee = sched_energy_workload;
-		else
-			p->ee.workload = 0;
-	}
+	p->ee.alpha = 1;
+	p->ee.workload = 0;
+	if (sched_energy_alpha != 1) 
+		p->ee.alpha = sched_energy_alpha;
+	if (sched_energy_workload != 0)
+		p->ee.workload_guarantee = sched_energy_workload;
 }
 
 
@@ -4945,6 +4940,13 @@ out:
 }
 EXPORT_SYMBOL_GPL(set_cpus_allowed_ptr);
 
+void migrate_task(struct task_struct *p, int dest_cpu, cpu_stop_fn_t fn)
+{
+	struct migration_arg arg = { p, dest_cpu };
+	stop_one_cpu(task_cpu(p), fn, &arg);
+	tlb_migrate_finish(p->mm);
+}
+
 /*
  * Move (not current) task off this cpu, onto dest cpu. We're doing
  * this because either it can't run here any more (set_cpus_allowed()
@@ -7017,14 +7019,14 @@ DECLARE_PER_CPU(cpumask_var_t, load_balance_mask);
 
 void init_energy_rq(struct rq *rq)
 {
-       struct energy_rq *e_rq = &rq->energy;
-       INIT_LIST_HEAD(&e_rq->queue);
-       e_rq->energy_nr_running = 0;
-       e_rq->rq = rq;
-       e_rq->freq = NULL;
-       e_rq->state_number = 0;
-       e_rq->set_freq = -1;
-       hrtimer_init(&e_rq->hr_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	struct energy_rq *e_rq = &rq->energy;
+	INIT_LIST_HEAD(&e_rq->queue);
+	e_rq->energy_nr_running = 0;
+	e_rq->rq = rq;
+	e_rq->freq = NULL;
+	e_rq->state_number = 0;
+	e_rq->set_freq = -1;
+	hrtimer_init(&e_rq->hr_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 }
 
 

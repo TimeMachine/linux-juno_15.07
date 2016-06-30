@@ -1353,6 +1353,13 @@ extern void init_rt_rq(struct rt_rq *rt_rq, struct rq *rq);
 extern void cfs_bandwidth_usage_inc(void);
 extern void cfs_bandwidth_usage_dec(void);
 
+struct migration_arg {
+    struct task_struct *task;
+    int dest_cpu;
+};
+
+extern void migrate_task(struct task_struct *p, int dest_cpu, cpu_stop_fn_t fn);
+
 #ifdef CONFIG_NO_HZ_COMMON
 enum rq_nohz_flag_bits {
 	NOHZ_TICK_STOPPED,

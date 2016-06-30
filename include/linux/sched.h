@@ -1048,24 +1048,24 @@ struct sched_rt_entity {
 };
 
 struct sched_energy_entity {
-       //statistics
-       u64 execute_start;
-       u32 select; // to be executed
-       int need_move;
-       int first;
-       u64 total_execution;
+	//statistics
+	u64 execute_start;
+	u32 select; // to be executed
+	int need_move;
+	int first;
+	u64 total_execution;
 
-       int over_predict; //half-scaling
-       u64 workload; // prediction
-       u64 dummy_workload;
-       u64 credit[NR_CPUS]; // calculate       
-       int split;
-       int alpha;
-       u64 workload_guarantee;
-       struct task_struct *instance;
-       // queue 
-       struct energy_rq *rq_e;
-       struct list_head list_item;
+	int over_predict; //half-scaling
+	u64 workload; // prediction
+	u64 dummy_workload;
+	u64 credit[NR_CPUS]; // calculate       
+	int split;
+	int alpha;
+	u64 workload_guarantee;
+	struct task_struct *instance;
+	// queue 
+	struct energy_rq *rq_e;
+	struct list_head list_item;
 };
 
 

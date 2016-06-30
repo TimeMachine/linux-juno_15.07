@@ -29,7 +29,6 @@ static int index[2][4] = {{0,3,4,5}, {1,2}}; // Little core cluster and Big core
 // lock by main_schedule
 static DEFINE_SPINLOCK(mr_lock);
 static spinlock_t rq_lock[_MAX_CPU];
-static int need_reschedule = 0;
 static struct hrtimer hr_timer;
 static int total_job = 0;
 
@@ -38,6 +37,10 @@ extern unsigned int get_stats_table(int cpu, unsigned int **freq);
 extern struct cpufreq_policy *cpufreq_cpu_get(unsigned int cpu);
 static void main_schedule(int workload_predict);
 static void put_prev_task_energy(struct rq *rq, struct task_struct *prev);
+
+int is_big_cluster(int cpu){
+	return cpu == 1 || cpu == 2;
+}
 
 static inline void _all_rq_lock(void)
 {
@@ -126,21 +129,12 @@ static enum hrtimer_restart sched_period_timer(struct hrtimer *timer)
 	ktime = ktime_set(0, NSEC_PER_SEC);
 
 	spin_lock(&mr_lock);
-	need_reschedule = 0;
 	main_schedule(true);
 	spin_unlock(&mr_lock);
 	
 	hrtimer_forward_now(timer, ktime);
 	
 	return HRTIMER_RESTART;
-}
-
-static enum hrtimer_restart sched_resched_timer(struct hrtimer *timer)
-{
-	struct energy_rq *ee = container_of(timer, struct energy_rq, hr_timer);	
-	//printk("[timer resched] cycle:%llu\n",get_cpu_cycle());
-	reschedule(ee->rq->cpu);
-	return HRTIMER_NORESTART;
 }
 
 static void update_credit(struct task_struct *curr)
@@ -212,6 +206,14 @@ static void move_task_to_rq(struct rq *rq, struct sched_energy_entity *task ,int
 	//printk("after move pid:%d energy_nr:%lu nr:%u task_contributes_to_load:%d cpu:%d\n",task->instance->pid, task->rq_e->energy_nr_running, task->rq_e->rq->nr_running, task_contributes_to_load(task->instance),task->rq_e->rq->cpu);
 }
 
+static int _migration(void *data)
+{
+	struct migration_arg *arg = data;
+	set_task_cpu(arg->task, arg->dest_cpu);
+	//move_task_to_rq(cpu_rq(arg->dest_cpu), &arg->task->ee, 1);
+	return 0;
+}
+
 static void rq_selection(int *try_cpu, int this_cpu)
 {
 	int cluster = 0;
@@ -236,6 +238,12 @@ static void rq_selection(int *try_cpu, int this_cpu)
 static int
 select_task_rq_energy(struct task_struct *p, int sd_flag, int flags)
 {
+	if (flags) {
+		if (p->ee.workload > 850000 * kHZ && task_cpu(p) != 1 && task_cpu(p) != 2)
+			return 2;
+		if (p->ee.workload <= 850000 * kHZ && (task_cpu(p) == 1 || task_cpu(p) == 2))
+			return 5;
+	}
 	return task_cpu(p); 
 }
 
@@ -274,6 +282,13 @@ static void pre_schedule_energy(struct rq *rq, struct task_struct *prev)
 		}
 		_all_rq_unlock();
 	}
+}
+
+static void task_waking_energy(struct task_struct *p)
+{
+	struct rq *rq = p->ee.rq_e->rq;
+	p->ee.credit[rq->cpu] = cycle_to_jiffies(p->ee.workload, rq->energy.freq_now);
+	//p->ee.total_execution = 0;
 }
 
 #endif /* CONFIG_SMP */
@@ -369,19 +384,18 @@ pick_next_task_energy(struct rq *rq)
 		if (rq->curr->policy == SCHED_ENERGY)
 			printk("[pick NULL] cpu:%d \n",smp_processor_id());
 #endif
-		if (retry != NULL) {
+		/*if (retry != NULL) {
 			// yield the task and pick.
+			migrate_task(retry->instance, rq->cpu);
+			//	reschedule(task_cpu(retry->instance));
+			//set_task_cpu(retry->instance, rq->cpu);
 			_all_rq_lock();
-			if (next_ee_cpu != try_cpu[i] &&
-                     (cpu_rq(next_ee_cpu)->curr->pid == next_ee->instance->pid))	
-				reschedule(task_cpu(retry->instance));
-			set_task_cpu(retry->instance, rq->cpu);
 			next_ee = retry;
 			next_ee->select = 1;
 			next_ee->need_move = -1;
 			_all_rq_unlock();
 		}
-		else
+		else*/
 			return NULL;
 	}
 	next = container_of(next_ee, struct task_struct, ee);
@@ -435,7 +449,6 @@ enqueue_task_energy(struct rq *rq, struct task_struct *p, int flags)
 			ktime = ktime_set(0, NSEC_PER_SEC);
 			start_bandwidth_timer(&hr_timer, ktime);
 		}
-		//need_reschedule = 1;
 		p->ee.first = 0;
 	}
 	_all_rq_unlock();
@@ -473,8 +486,6 @@ dequeue_task_energy(struct rq *rq, struct task_struct *p, int flags)
 				hrtimer_cancel(&hr_timer);
 			}
 		}
-		//else
-		//	need_reschedule = 1;
 	}
 #ifdef _debug
 	printk("[debug de] pid:%d prev->state:%ld flag:%d\n", p->pid, p->state, flags);
@@ -507,10 +518,14 @@ static unsigned int next_frequency_level(unsigned int workload, int cpu)
 	struct energy_rq *i_rq = &cpu_rq(cpu)->energy;
 	int i;
 	for (i = 0; i < i_rq->state_number; i++) {
-		if (i_rq->freq[i] > workload)
+		if (i_rq->freq[i] * kHZ > workload)
 			return i_rq->freq[i] * kHZ;
 	}
-	return i_rq->freq[i-1] * kHZ;
+	if (cpu == 1 || cpu == 2)
+		return i_rq->freq[i-1] * kHZ;
+	if (workload > 850000 * kHZ && workload <= 950000 * kHZ)
+		return 950000 * kHZ;
+	return 1100000 * kHZ;
 }
 
 static void workload_prediction(void)
@@ -531,7 +546,7 @@ static void workload_prediction(void)
 				data = list_entry(pos ,struct sched_energy_entity, list_item);
 				next_level = next_frequency_level(data->workload, i);
 				// predict workload from the statistics
-				//printk("pid:%d, cpu:%d, exeute_start:%llu, total_execution:%llu, workload:%llu, workload(jiffies):%llu\n",data->instance->pid , i, data->execute_start ,data->total_execution, data->workload, cycle_to_jiffies(data->workload, i_rq->energy.freq_now));
+				printk("pid:%d, cpu:%d, exeute_start:%llu, total_execution:%llu, workload:%llu, workload(jiffies):%llu\n",data->instance->pid , i, data->execute_start ,data->total_execution, data->workload, cycle_to_jiffies(data->workload, i_rq->energy.freq_now));
 				if (data->workload > i_rq->energy.freq_now * kHZ) {
 					// special case (cpufreq is not setting).
 					data->workload = jiffies_to_cycle(data->total_execution, i_rq->energy.freq_now);
@@ -570,7 +585,10 @@ static void workload_prediction(void)
 					data->over_predict++;
 				}
 				else {
-					data->workload = ((jiffies_to_cycle(data->total_execution, i_rq->energy.freq_now) + data->workload)) / 2;
+					if (i == 1 || i == 2)
+						data->workload = ((jiffies_to_cycle(data->total_execution, i_rq->energy.freq_now) + data->workload)) / 4 * 3;
+					else
+						data->workload = ((jiffies_to_cycle(data->total_execution, i_rq->energy.freq_now) + data->workload)) / 2;
 					data->over_predict = 0;
 				}
 				// reset the statistics.
@@ -588,9 +606,19 @@ static int compare_alpha(const void *a, const void *b)
 	struct sched_energy_entity * const *ippb = b;	
 	const struct sched_energy_entity *ipa = *ippa;	
 	const struct sched_energy_entity *ipb = *ippb;	
+	if ((ipa->dummy_workload > (u64)850000 * 10000 / 17) && is_big_cluster(task_cpu(ipa->instance))
+			&& (ipb->dummy_workload <= 85000 * kHZ) && !is_big_cluster(task_cpu(ipb->instance)) )
+		return -1;
+	if ((ipa->dummy_workload <= 850000 * kHZ) && !is_big_cluster(task_cpu(ipb->instance))
+			&& (ipb->dummy_workload > (u64)85000 * 10000 / 17) && is_big_cluster(task_cpu(ipa->instance)))
+		return 1;
 	if (ipa->alpha > ipb->alpha)
 		return -1;
 	if (ipa->alpha < ipb->alpha)
+		return 1;
+	if (ipa->dummy_workload > ipb->dummy_workload)
+		return -1;
+	if (ipa->dummy_workload < ipb->dummy_workload)
 		return 1;
 	return 0;
 }
@@ -751,9 +779,14 @@ static void algo(int workload_predict)
 			if (total_workload + data[j]->dummy_workload > 
 				(u64)cpu_rq(index[k][0])->energy.freq[cpu_rq(index[k][0])->energy.state_number - 1] * core_count * kHZ && k == 0) 
 				break;
+			if (k == 0 && ((data[j]->dummy_workload > 850000 * kHZ && !is_big_cluster(task_cpu(data[j]->instance)))
+						|| (data[j]->dummy_workload > (u64)850000 * 10000 / 17 && is_big_cluster(task_cpu(data[j]->instance)))))
+				break;
 			total_workload += data[j]->dummy_workload;
 			cluster_job++;
 		}
+		if (total_workload == 0)
+			continue;
 		sort(data + j + 1, cluster_job, sizeof(struct sched_energy_entity*), compare_workload, NULL);
 		scheduling_cluster(index[k], core_count, cluster_job, j+1, total_workload, o_freq);	
 	}
@@ -780,14 +813,7 @@ static void algo(int workload_predict)
             max_freq = cpu_rq(i)->energy.freq[0];
 		if (max_freq != cpu_rq(i)->energy.freq_now)
 			cpu_rq(i)->energy.set_freq = max_freq;	
-		//set_cpu_frequency(i, max_freq);
-		//for (j = 0; j < core_count; j++)
-		//	freq_now[index[i][j]] = max_freq;		
 	}
-	//mod_delayed_work_on(smp_processor_id(), system_wq, &delay_work, 1);
-	//ktime_t ktime;
-	//ktime = ktime_set(0, NSEC_PER_MSEC);
-	//start_bandwidth_timer(&set_freq_timer, ktime);
 	
 	_all_rq_unlock();
 	for (i = 0 ;i < _MAX_CPU; i++) {
@@ -818,22 +844,14 @@ static void main_schedule(int workload_predict)
 
 static void task_tick_energy(struct rq *rq, struct task_struct *curr, int queued)
 {
-	if (spin_trylock(&mr_lock)) {
 #ifdef _debug
 		//printk("cpu:%d, %s, pid:%d\n",smp_processor_id() ,__PRETTY_FUNCTION__, curr->pid);
 #endif
-		if (need_reschedule) {
-			need_reschedule = 0;
-			main_schedule(false);
-			spin_unlock(&mr_lock);
-			return;
-		}
-		spin_unlock(&mr_lock);
-	}
 	update_credit(curr);
+	update_curr_task(rq);
 	if (!spin_is_locked(&mr_lock) && 
 		//((rq->clock_task - rq->energy.time_sharing >= 30 * USEC_PER_SEC)||
-		curr->ee.credit[rq->cpu] == 0) {
+		curr->ee.credit[rq->cpu] == 0){
 		// time sharing
 		rq->energy.time_sharing = rq->clock_task;
 		spin_lock(&rq_lock[rq->cpu]);	
@@ -882,6 +900,7 @@ const struct sched_class energy_sched_class = {
 	.select_task_rq		= select_task_rq_energy,
 	.pre_schedule       = pre_schedule_energy,
 	.post_schedule      = post_schedule_energy,
+	.task_waking        = task_waking_energy,
 #endif
 
 	.set_curr_task          = set_curr_task_energy,
