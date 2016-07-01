@@ -15,9 +15,6 @@
 #define kHZ 1000
 #define juno
 
-#define jiffies_to_cycle(jiffies,freq)  (jiffies / (_1s_jiffies / kHZ)) * freq
-#define cycle_to_jiffies(cycle,freq)  (cycle / freq) * (_1s_jiffies / kHZ)
-
 #ifdef juno
 #define _1s_jiffies 50000000
 #define little_cpu 4
@@ -25,6 +22,9 @@
 #define _MAX_CPU 6
 static int index[2][4] = {{0,3,4,5}, {1,2}}; // Little core cluster and Big core cluster.
 #endif
+
+#define jiffies_to_cycle(jiffies,freq)  (((u64) jiffies * freq) / (_1s_jiffies / kHZ))
+#define cycle_to_jiffies(cycle,freq)  (((u64) cycle * _1s_jiffies) / ((u64) freq * kHZ))
 
 // lock by main_schedule
 static DEFINE_SPINLOCK(mr_lock);
@@ -107,11 +107,9 @@ static void get_cpu_frequency(int cpu)
 static void reschedule(int cpu)
 {
 	struct rq *i_rq = cpu_rq(cpu);
-	//if (i_rq->energy.dvfs_lock)
-	//	return;
 	//printk("resched %d, pid:%d\n",cpu,i_rq->curr->pid);
-	if (cpu == smp_processor_id() && raw_spin_is_locked(&i_rq->lock))
-		resched_task(i_rq->curr);
+	if (cpu == smp_processor_id())
+		set_tsk_need_resched(i_rq->curr);
 	else if(cpu != smp_processor_id() && i_rq->curr == i_rq->idle) 
 		// test....
 		wake_up_nohz_cpu(cpu);
@@ -238,12 +236,6 @@ static void rq_selection(int *try_cpu, int this_cpu)
 static int
 select_task_rq_energy(struct task_struct *p, int sd_flag, int flags)
 {
-	if (flags) {
-		if (p->ee.workload > 850000 * kHZ && task_cpu(p) != 1 && task_cpu(p) != 2)
-			return 2;
-		if (p->ee.workload <= 850000 * kHZ && (task_cpu(p) == 1 || task_cpu(p) == 2))
-			return 5;
-	}
 	return task_cpu(p); 
 }
 
@@ -287,7 +279,7 @@ static void pre_schedule_energy(struct rq *rq, struct task_struct *prev)
 static void task_waking_energy(struct task_struct *p)
 {
 	struct rq *rq = p->ee.rq_e->rq;
-	p->ee.credit[rq->cpu] = cycle_to_jiffies(p->ee.workload, rq->energy.freq_now);
+	p->ee.credit[rq->cpu] = cycle_to_jiffies(p->ee.workload_guarantee * kHZ, rq->energy.freq_now);
 	//p->ee.total_execution = 0;
 }
 
@@ -353,9 +345,9 @@ pick_next_task_energy(struct rq *rq)
 			if (i <= 1) {
 				if ((i == 0 && next_ee->split) || i == 1) {
 					find = 1;
-					if (next_ee_cpu != rq->cpu) {
+					//if (next_ee_cpu != rq->cpu) {
 						set_task_cpu(next_ee->instance, rq->cpu);
-					}
+					//}
 					break;
 				}
 			}
@@ -546,7 +538,7 @@ static void workload_prediction(void)
 				data = list_entry(pos ,struct sched_energy_entity, list_item);
 				next_level = next_frequency_level(data->workload, i);
 				// predict workload from the statistics
-				printk("pid:%d, cpu:%d, exeute_start:%llu, total_execution:%llu, workload:%llu, workload(jiffies):%llu\n",data->instance->pid , i, data->execute_start ,data->total_execution, data->workload, cycle_to_jiffies(data->workload, i_rq->energy.freq_now));
+				//printk("pid:%d, cpu:%d, exeute_start:%llu, total_execution:%llu, workload:%llu, workload(jiffies):%llu, freq_now:%u\n",data->instance->pid , i, data->execute_start ,data->total_execution, data->workload, cycle_to_jiffies(data->workload, i_rq->energy.freq_now), i_rq->energy.freq_now);
 				if (data->workload > i_rq->energy.freq_now * kHZ) {
 					// special case (cpufreq is not setting).
 					data->workload = jiffies_to_cycle(data->total_execution, i_rq->energy.freq_now);
@@ -560,7 +552,7 @@ static void workload_prediction(void)
 						data->workload = i_rq->energy.freq[0] * kHZ;
 					data->over_predict = 0;
 				}
-				else if (data->total_execution >= cycle_to_jiffies(data->workload, i_rq->energy.freq_now)) {
+				else if (data->total_execution >= cycle_to_jiffies(data->workload, i_rq->energy.freq_now) * 9 / 10) {
 				//else if (jiffies_to_cycle(data->total_execution, i_rq->energy.freq_now) >= data->workload) {
 					if (data->workload_guarantee)
 						data->workload = data->workload_guarantee * kHZ;
@@ -585,9 +577,9 @@ static void workload_prediction(void)
 					data->over_predict++;
 				}
 				else {
-					if (i == 1 || i == 2)
-						data->workload = ((jiffies_to_cycle(data->total_execution, i_rq->energy.freq_now) + data->workload)) / 4 * 3;
-					else
+					//if (is_big_cluster(i))
+					//	data->workload = (jiffies_to_cycle(data->total_execution, i_rq->energy.freq_now) + (data->workload)*3) / 4;
+					//else
 						data->workload = ((jiffies_to_cycle(data->total_execution, i_rq->energy.freq_now) + data->workload)) / 2;
 					data->over_predict = 0;
 				}
@@ -612,10 +604,10 @@ static int compare_alpha(const void *a, const void *b)
 	if ((ipa->dummy_workload <= 850000 * kHZ) && !is_big_cluster(task_cpu(ipb->instance))
 			&& (ipb->dummy_workload > (u64)85000 * 10000 / 17) && is_big_cluster(task_cpu(ipa->instance)))
 		return 1;
-	if (ipa->alpha > ipb->alpha)
+	/*if (ipa->alpha > ipb->alpha)
 		return -1;
 	if (ipa->alpha < ipb->alpha)
-		return 1;
+		return 1;*/
 	if (ipa->dummy_workload > ipb->dummy_workload)
 		return -1;
 	if (ipa->dummy_workload < ipb->dummy_workload)
@@ -687,7 +679,7 @@ static void scheduling_cluster(int *cpu_mask, int core_count, int job_count, int
 					//if (data[ptr]->rq_e->rq->cpu != i && data[ptr]->instance->on_rq) {
 						// if task is scheduled to other cpu, task have to move to other queue.
 						//printk("[algo] pid:%d ,from:%d ,to:%d\n",data[ptr]->instance->pid,data[ptr]->rq_e->rq->cpu,i_rq->cpu);
-						if (data[ptr]->select == 0 && 
+						if (data[ptr]->select == 0 && data[ptr]->instance->state == TASK_RUNNING && 
 								data[ptr]->instance->pid != data[ptr]->rq_e->rq->curr->pid &&
 								data[ptr]->instance->pid != cpu_rq(task_cpu(data[ptr]->instance))->curr->pid)
 							move_task_to_rq(i_rq ,data[ptr] ,1);
@@ -782,11 +774,22 @@ static void algo(int workload_predict)
 			if (k == 0 && ((data[j]->dummy_workload > 850000 * kHZ && !is_big_cluster(task_cpu(data[j]->instance)))
 						|| (data[j]->dummy_workload > (u64)850000 * 10000 / 17 && is_big_cluster(task_cpu(data[j]->instance)))))
 				break;
+			if (k == 0 && is_big_cluster(task_cpu(data[j]->instance)) 
+				&& data[j]->workload > (u64)850000 * 10000 / 17) {
+				data[j]->workload = 850000 * kHZ;
+				data[j]->dummy_workload = data[j]->workload; 
+			}
+			if (k == 1 && !is_big_cluster(task_cpu(data[j]->instance))
+				&& data[j]->dummy_workload > 850000 * kHZ) {
+				data[j]->workload = 800000 * kHZ;
+				data[j]->dummy_workload = data[j]->workload; 
+			}
 			total_workload += data[j]->dummy_workload;
 			cluster_job++;
 		}
 		if (total_workload == 0)
 			continue;
+		//printk("[debug] k:%d j:%d cluster_job:%d total_workload:%llu\n",k,j+1,cluster_job,total_workload);
 		sort(data + j + 1, cluster_job, sizeof(struct sched_energy_entity*), compare_workload, NULL);
 		scheduling_cluster(index[k], core_count, cluster_job, j+1, total_workload, o_freq);	
 	}
@@ -815,13 +818,13 @@ static void algo(int workload_predict)
 			cpu_rq(i)->energy.set_freq = max_freq;	
 	}
 	
-	_all_rq_unlock();
 	for (i = 0 ;i < _MAX_CPU; i++) {
 		i_rq = cpu_rq(i);
 		if (i_rq->curr->ee.credit[i] == 0 || i_rq->curr->ee.need_move != -1){
 			reschedule(i);
 		}
 	}
+	_all_rq_unlock();
 }
 
 static void main_schedule(int workload_predict)
@@ -850,8 +853,8 @@ static void task_tick_energy(struct rq *rq, struct task_struct *curr, int queued
 	update_credit(curr);
 	update_curr_task(rq);
 	if (!spin_is_locked(&mr_lock) && 
-		//((rq->clock_task - rq->energy.time_sharing >= 30 * USEC_PER_SEC)||
-		curr->ee.credit[rq->cpu] == 0){
+		((rq->clock_task - rq->energy.time_sharing >= 30 * USEC_PER_SEC)||
+		curr->ee.credit[rq->cpu] == 0)){
 		// time sharing
 		rq->energy.time_sharing = rq->clock_task;
 		spin_lock(&rq_lock[rq->cpu]);	

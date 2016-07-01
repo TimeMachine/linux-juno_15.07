@@ -128,31 +128,30 @@ static void cs_dbs_timer(struct work_struct *work)
 	struct rq *i_rq;
 	static int index[2][4] = {{0,3,4,5}, {1,2}};
 	struct cpufreq_policy *policy;
+	int set_freq = 0;
 	
 	mutex_lock(&core_dbs_info->cdbs.timer_mutex);
 #define big_cpu 2
 #define little_cpu 4
 	for (i = 0; i < 2; i++) {
 		i_rq = cpu_rq(i);
-		if (i_rq->energy.set_freq == -1)
+		set_freq = i_rq->energy.set_freq;
+		if (set_freq == -1)
 			continue;
 		//printk("@ cpu:%d freq:%d\n",i,i_rq->energy.set_freq);
 		policy = cpufreq_cpu_get(i);
-		__cpufreq_driver_target(policy, i_rq->energy.set_freq, CPUFREQ_RELATION_L);
+		__cpufreq_driver_target(policy, set_freq, CPUFREQ_RELATION_L);
 		//cpufreq_governor_dbs(policy, &cs_dbs_cdata, CPUFREQ_GOV_LIMITS);
 		cpufreq_cpu_put(policy);
 		if(i == 0) {
 			for (j = 0; j < little_cpu; j++)
-				cpu_rq(index[0][j])->energy.freq_now = i_rq->energy.set_freq;
+				cpu_rq(index[0][j])->energy.freq_now = set_freq;
 		}
 		else {
-			cpu_rq(1)->energy.freq_now = i_rq->energy.set_freq;
-			cpu_rq(2)->energy.freq_now = i_rq->energy.set_freq;
+			cpu_rq(1)->energy.freq_now = set_freq;
+			cpu_rq(2)->energy.freq_now = set_freq;
 		}
-		i_rq->energy.set_freq = -1;
 	}
-		//printk("[test] cpu:%d set_freq:%d \n",cpu, i_rq->energy.set_freq);
-	//}
 
 	gov_queue_work(dbs_data, dbs_info->cdbs.cur_policy, delay, modify_all);
 	mutex_unlock(&core_dbs_info->cdbs.timer_mutex);

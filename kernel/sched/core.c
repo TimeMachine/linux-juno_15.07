@@ -1625,6 +1625,7 @@ void __energy_task_init(struct task_struct *p)
 		p->ee.credit[i] = 0;
 	p->ee.alpha = 1;
 	p->ee.workload = 0;
+	p->ee.workload_guarantee = 0;
 	if (sched_energy_alpha != 1) 
 		p->ee.alpha = sched_energy_alpha;
 	if (sched_energy_workload != 0)
@@ -3896,7 +3897,7 @@ __setscheduler(struct rq *rq, struct task_struct *p, int policy, int prio)
 		if (sched_energy_workload != 0)
 			p->ee.workload_guarantee = sched_energy_workload;
 		else
-			p->ee.workload = 0;
+			p->ee.workload_guarantee = 0;
 	}
 	else if (rt_prio(p->prio)) {
 		p->sched_class = &rt_sched_class;
